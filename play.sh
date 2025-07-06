@@ -62,7 +62,7 @@ main() {
         }
         
         # ASCII 프레임 생성
-        python scripts/extract_ascii_frames.py --input "assets/bad_apple.mp4" --output "assets/ascii_frames" --width $ascii_width --height $ascii_height --fps 30
+        python scripts/extract_ascii_frames.py --input "assets/bad_apple.mp4" --output "assets/ascii_frames" --width $ascii_width --height $ascii_height --fps 120
         
         echo "✅ ASCII frames generated"
     fi
