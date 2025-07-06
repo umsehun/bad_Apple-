@@ -47,7 +47,7 @@ static AppConfig g_config = {
 static void signal_handler(int sig) {
     (void)sig;
     g_running = false;
-    printf("\n[INFO] Graceful shutdown initiated...\n");
+    
 }
 
 // 도움말 출력
@@ -147,10 +147,6 @@ static ErrorCode parse_arguments(int argc, char *argv[]) {
 static ErrorCode initialize_application(void) {
     ErrorCode result;
     
-    if (g_config.verbose) {
-        printf("[INFO] Initializing Bad Apple ASCII Animation...\n");
-    }
-    
     // 프레임 매니저 초기화
     result = frame_manager_init(g_config.frames_dir);
     if (result != ERR_SUCCESS) {
@@ -170,12 +166,6 @@ static ErrorCode initialize_application(void) {
     if (result != ERR_SUCCESS) {
         error_log(ERR_AUDIO_INIT, __FUNCTION__, __LINE__, "Audio manager initialization failed");
         return result;
-    }
-    
-    if (g_config.verbose) {
-        printf("[INFO] All managers initialized successfully\n");
-        printf("[INFO] Frames: %zu, FPS: %.1f, Mode: %d\n", 
-               frame_manager_get_total_frames(), g_config.fps, g_config.display_mode);
     }
     
     return ERR_SUCCESS;
@@ -211,105 +201,6 @@ static void print_statistics(void) {
     printf("================================================================\n");
 }
 
-/**
- * @brief 프레임 실제 너비 감지
- */
-static size_t detect_frame_width(const char* frame_data) {
-    if (!frame_data) return 0;
-    
-    const char* line_end = strchr(frame_data, '\n');
-    if (line_end) {
-        return line_end - frame_data;
-    }
-    
-    // 개행이 없으면 전체 길이
-    return strlen(frame_data);
-}
-
-/**
- * @brief 터미널 크기에 맞게 ASCII 프레임 스케일링 (개선된 버전)
- */
-static char* scale_frame_to_terminal(const char* frame_data, size_t frame_size, 
-                                   uint16_t terminal_width, uint16_t terminal_height,
-                                   size_t* scaled_size) {
-    if (!frame_data || frame_size == 0) return NULL;
-    
-    // 실제 프레임 너비 감지
-    size_t actual_frame_width = detect_frame_width(frame_data);
-    size_t estimated_lines = 0;
-    
-    // 프레임 라인 수 정확히 계산
-    const char* ptr = frame_data;
-    while (*ptr) {
-        if (*ptr == '\n') estimated_lines++;
-        ptr++;
-    }
-    
-    if (g_config.verbose) {
-        printf("[DEBUG] Frame info: width=%zu, lines=%zu, terminal=%dx%d\n", 
-               actual_frame_width, estimated_lines, terminal_width, terminal_height);
-    }
-    
-    // 🔥 프레임이 터미널 크기에 적합하면 그대로 사용 (개선된 조건)
-    if (actual_frame_width <= terminal_width && estimated_lines <= terminal_height - 2) {
-        *scaled_size = frame_size;
-        char* result = malloc(frame_size + 1);
-        if (result) {
-            memcpy(result, frame_data, frame_size);
-            result[frame_size] = '\0';
-        }
-        return result;
-    }
-    
-    // 🔥 스마트 스케일링: 터미널 크기에 맞게 조정 
-    size_t scaled_buffer_size = terminal_width * terminal_height + terminal_height; 
-    char* scaled_frame = malloc(scaled_buffer_size);
-    if (!scaled_frame) return NULL;
-    
-    const char* src_ptr = frame_data;
-    char* dst_ptr = scaled_frame;
-    size_t dst_used = 0;
-    
-    // 🎯 라인별 처리로 정확한 스케일링
-    size_t lines_processed = 0;
-    size_t target_lines = terminal_height - 2; // 여유 공간 확보
-    
-    while (*src_ptr && lines_processed < target_lines && dst_used < scaled_buffer_size - 1) {
-        size_t line_chars = 0;
-        const char* line_start = src_ptr;
-        
-        // 현재 줄의 끝까지 이동 (정확한 너비 계산)
-        while (*src_ptr && *src_ptr != '\n') {
-            src_ptr++;
-            line_chars++;
-        }
-        
-        // 🔥 터미널 너비에 맞게 라인 조정
-        size_t target_width = terminal_width - 1; // 여유 공간
-        size_t copy_chars = (line_chars < target_width) ? line_chars : target_width;
-        
-        if (dst_used + copy_chars + 1 < scaled_buffer_size) {
-            // 라인 복사
-            memcpy(dst_ptr, line_start, copy_chars);
-            dst_ptr += copy_chars;
-            dst_used += copy_chars;
-            
-            // 라인이 터미널보다 좁으면 패딩 추가하지 않음 (자연스러운 모양 유지)
-            *dst_ptr++ = '\n';
-            dst_used++;
-        }
-        
-        // 다음 줄로 이동
-        if (*src_ptr == '\n') src_ptr++;
-        lines_processed++;
-    }
-    
-    *dst_ptr = '\0';
-    *scaled_size = dst_used;
-    
-    return scaled_frame;
-}
-
 // 메인 애니메이션 루프
 static ErrorCode run_animation_loop(void) {
     ErrorCode result;
@@ -317,10 +208,6 @@ static ErrorCode run_animation_loop(void) {
     // 터미널 크기 가져오기
     uint16_t terminal_width, terminal_height;
     display_manager_get_terminal_size(&terminal_width, &terminal_height);
-    
-    if (g_config.verbose) {
-        printf("[INFO] Terminal size: %dx%d\n", terminal_width, terminal_height);
-    }
     
     // 오디오 재생 시작
     result = audio_manager_start_playback(g_config.audio_file);
@@ -330,10 +217,6 @@ static ErrorCode run_animation_loop(void) {
     
     size_t total_frames = frame_manager_get_total_frames();
     size_t current_frame = 0;
-    
-    if (g_config.verbose) {
-        printf("[INFO] Starting animation loop with %zu frames\n", total_frames);
-    }
     
     // 메인 애니메이션 루프
     while (g_running && current_frame < total_frames) {
@@ -346,20 +229,8 @@ static ErrorCode run_animation_loop(void) {
             break;
         }
         
-        // 🔥 터미널 크기에 맞게 프레임 스케일링
-        size_t scaled_size;
-        char* scaled_frame = scale_frame_to_terminal(frame_data, frame_size, 
-                                                   terminal_width, terminal_height, 
-                                                   &scaled_size);
-        
-        if (scaled_frame) {
-            // 스케일링된 프레임 렌더링
-            result = display_manager_render_frame(scaled_frame, scaled_size);
-            free(scaled_frame); // 메모리 해제
-        } else {
-            // 스케일링 실패 시 원본 프레임 사용
-            result = display_manager_render_frame(frame_data, frame_size);
-        }
+        // 🔥 스케일링 없이 원본 프레임 직접 렌더링 (배율 문제 해결)
+        result = display_manager_render_frame(frame_data, frame_size);
         
         if (result != ERR_SUCCESS) {
             error_log(ERR_DISPLAY_INIT, __FUNCTION__, __LINE__, "Frame rendering failed");
@@ -370,17 +241,6 @@ static ErrorCode run_animation_loop(void) {
         display_manager_frame_sync();
         
         current_frame++;
-        
-        // 진행 상황 출력 (verbose 모드)
-        if (g_config.verbose && current_frame % 100 == 0) {
-            printf("[DEBUG] Rendered frame %zu/%zu (%.1f%%)\n", 
-                   current_frame, total_frames, 
-                   (double)current_frame / total_frames * 100.0);
-        }
-    }
-    
-    if (g_config.verbose) {
-        printf("[INFO] Animation loop completed\n");
     }
     
     return ERR_SUCCESS;
@@ -388,10 +248,6 @@ static ErrorCode run_animation_loop(void) {
 
 // 애플리케이션 정리
 static void cleanup_application(void) {
-    if (g_config.verbose) {
-        printf("[INFO] Cleaning up resources...\n");
-    }
-    
     // 통계 출력
     print_statistics();
     
@@ -399,10 +255,6 @@ static void cleanup_application(void) {
     audio_manager_cleanup();
     display_manager_cleanup();
     frame_manager_cleanup();
-    
-    if (g_config.verbose) {
-        printf("[INFO] Cleanup completed\n");
-    }
 }
 
 // 메인 함수

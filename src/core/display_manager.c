@@ -59,36 +59,7 @@ static void detect_terminal_size(TerminalSize *size) {
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &w) == 0 && w.ws_col > 0 && w.ws_row > 0) {
         size->width = w.ws_col;
         size->height = w.ws_row;
-        
-        // 🔥 동적 터미널 크기 매핑 개선
-        // 271x70 → 약 260x65 (거의 풀사이즈 사용)
-        if (size->width >= 271) {
-            size->width = 260;  // 271에서 약 96% 사용
-        } else if (size->width >= 241) {
-            size->width = 230;  // 241에서 약 95% 사용
-        } else if (size->width >= 200) {
-            size->width = size->width - 10;  // 여백 10자 확보
-        } else if (size->width < 120) {
-            size->width = 120;  // 최소 크기
-        }
-        
-        if (size->height >= 70) {
-            size->height = 65;   // 70에서 65 사용 (상태표시줄 여백)
-        } else if (size->height >= 60) {
-            size->height = size->height - 5;  // 여백 5줄 확보
-        } else if (size->height < 30) {
-            size->height = 30;   // 최소 크기
-        }
-    } else {
-        // 🔥 기본값을 230x60으로 설정 (대형 터미널 기준)
-        size->width = 230;
-        size->height = 60;
     }
-    
-    // 디버그 출력 (개발 중에만)
-    #ifdef DEBUG
-    fprintf(stderr, "Terminal size detected: %dx%d\n", size->width, size->height);
-    #endif
 }
 
 /**
@@ -317,15 +288,32 @@ void display_manager_frame_sync(void) {
     struct timespec current_time;
     get_current_time(&current_time);
     
-    // 목표 프레임 간격 계산 (나노초)
-    long target_interval_ns = (long)(NANOSEC_PER_SEC / dm->target_fps);
+    // 🔥 절대 시간 기반 오디오 동기화 (누적 오차 방지)
+    static struct timespec animation_start_time = {0, 0};
+    static bool first_frame = true;
     
-    // 경과 시간 계산
-    long elapsed_ns = (current_time.tv_sec - dm->last_frame_time.tv_sec) * NANOSEC_PER_SEC +
-                      (current_time.tv_nsec - dm->last_frame_time.tv_nsec);
+    // 첫 프레임에서 애니메이션 시작 시간 기록
+    if (first_frame) {
+        animation_start_time = current_time;
+        first_frame = false;
+        dm->last_frame_time = current_time;
+        pthread_mutex_unlock(&dm->mutex);
+        return;
+    }
     
-    // 대기 시간 계산
-    long sleep_ns = target_interval_ns - elapsed_ns;
+    // 현재 프레임 번호 계산 (통계에서 가져옴)
+    uint64_t current_frame = dm->stats.frames_rendered;
+    
+    // 목표 시간 계산 (절대 시간 기준)
+    double target_time_sec = (double)current_frame / dm->target_fps;
+    long target_time_ns = (long)(target_time_sec * NANOSEC_PER_SEC);
+    
+    // 실제 경과 시간 계산
+    long elapsed_ns = (current_time.tv_sec - animation_start_time.tv_sec) * NANOSEC_PER_SEC +
+                      (current_time.tv_nsec - animation_start_time.tv_nsec);
+    
+    // 동기화 대기 시간 계산
+    long sleep_ns = target_time_ns - elapsed_ns;
     
     if (sleep_ns > 0) {
         struct timespec sleep_time = {
@@ -333,13 +321,16 @@ void display_manager_frame_sync(void) {
             .tv_nsec = sleep_ns % NANOSEC_PER_SEC
         };
         
-        // 정밀한 대기
+        // 정밀한 대기 (오디오 동기화)
         nanosleep(&sleep_time, NULL);
     }
     
-    // 현재 FPS 계산
-    if (elapsed_ns > 0) {
-        dm->stats.current_fps = NANOSEC_PER_SEC / (double)elapsed_ns;
+    // 현재 FPS 계산 (이전 프레임과의 간격 기준)
+    long frame_interval_ns = (current_time.tv_sec - dm->last_frame_time.tv_sec) * NANOSEC_PER_SEC +
+                            (current_time.tv_nsec - dm->last_frame_time.tv_nsec);
+    
+    if (frame_interval_ns > 0) {
+        dm->stats.current_fps = NANOSEC_PER_SEC / (double)frame_interval_ns;
     }
     
     // 마지막 프레임 시간 업데이트
