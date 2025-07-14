@@ -179,7 +179,7 @@ ErrorCode audio_manager_start_playback(const char* audio_file) {
         
         // 통계 초기화
         memset(&am->stats, 0, sizeof(AudioStats));
-        am->stats.is_synchronized = true;
+        am->stats.sync_enabled = true;
     } else {
         // fork 실패
         pthread_mutex_unlock(&am->mutex);

@@ -2,10 +2,12 @@
 # High Performance C Implementation
 # Author: BadApple C Team
 # Date: 2025-07-05
+MAKEFLAGS += -j$(shell sysctl -n hw.ncpu)
 
 # 컴파일러 및 플래그
-CC = gcc
-CFLAGS = -std=c99 -Wall -Wextra -pedantic -flto
+# 빌드 캐시를 위해 ccache를 사용합니다
+CC = ccache gcc
+CFLAGS = -std=c99 -Wall -Wextra -pedantic
 CFLAGS += -O3 -march=native -mtune=native
 CFLAGS += -ffast-math -funroll-loops -finline-functions
 CFLAGS += -DPERFORMANCE_MONITORING
@@ -15,6 +17,10 @@ DEBUG_CFLAGS = -std=c99 -Wall -Wextra -pedantic -g -O0 -DDEBUG
 
 # 링크 플래그
 LDFLAGS = -pthread -lm
+# zld(ld64.zld)가 설치된 경우 빠른 링킹 사용
+ifneq (, $(shell which ld64.zld))
+    LDFLAGS += -Wl,-fuse-ld=ld64.zld
+endif
 
 # 디렉토리 구조
 SRCDIR = src
