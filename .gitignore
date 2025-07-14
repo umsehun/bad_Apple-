@@ -1,3 +1,14 @@
-scripts
+assets/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
 *assets
-*venv
+/assets/
+@build
+build/
+assets/
+*assets
