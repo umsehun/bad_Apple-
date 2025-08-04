@@ -212,57 +212,28 @@ main() {
     fi
     mkdir -p "$frames_dir"
     
-    # 7. 프레임 존재 확인 & 재생성
-    # nullglob 사용하여 패턴 미매치 시 빈 배열로 처리
+    # 7. 프레임 존재 확인 & 자동 생성
     shopt -s nullglob
     frames=("$frames_dir"/*.txt)
     frame_count=${#frames[@]}
     echo "DEBUG: STEP 7 - frames_dir=$frames_dir, existing frames=$frame_count" >&2
 
-    # Always regenerate for ASCII/RGB modes to allow resume 지원
-    regenerate=false
-    if [[ "$mode" == "ASCII" || "$mode" == "RGB" ]]; then
-        regenerate=true
-    fi
-    echo "DEBUG: STEP 7 - Regenerate frames? $regenerate" >&2
-
-    if $regenerate; then
-        echo "🔄 프레임을 생성합니다 ($mode) …"
-        echo "DEBUG: STEP 7a - Begin frame extraction" >&2
-        # 동적 해상도 및 FPS 결정
+    # 프레임이 없으면 자동 생성
+    if [[ "$frame_count" -eq 0 && "$mode" == "ASCII" ]]; then
+        echo "🔄 프레임이 없으므로 자동으로 생성합니다 ($mode) …"
         ts=$(stty size 2>/dev/null || echo "20 80")
         rows=$(echo $ts | cut -d ' ' -f1)
         cols=$(echo $ts | cut -d ' ' -f2)
-        # 프레임 크기 및 FPS 설정
-        if [[ "$mode" == "RGB" ]]; then
-            frame_w=140
-            frame_h=50
-            fps_val=120
-        else
-            # 프레임 크기: 좌우/상하 여백 확보
-            frame_w=$((cols - 3))
-            frame_h=$((rows - 3))
-            [ "$frame_w" -lt 40 ] && frame_w=40
-            [ "$frame_h" -lt 20 ] && frame_h=20
-            # FPS 설정: ASCII=120
-            fps_val=120
-        fi
+        frame_w=$((cols - 3))
+        frame_h=$((rows - 3))
+        [ "$frame_w" -lt 40 ] && frame_w=40
+        [ "$frame_h" -lt 20 ] && frame_h=20
+        [ "$frame_w" -gt 300 ] && frame_w=300
+        [ "$frame_h" -gt 100 ] && frame_h=100
+        fps_val=120
         echo "📏 터미널 ${cols}x${rows}, Frames: ${frame_w}x${frame_h}, FPS: ${fps_val}" >&2
-        # 프레임 디렉터리 초기화
-        # rm -rf "$frames_dir" && mkdir -p "$frames_dir" # This line is now redundant due to the new_code
-        # 리소스 기반 동적 축소 비활성화: 고정 크기(140x50) 유지
-        # 품질 개선을 위해 해상도 고정
-
-        # 디버그: Python 환경 확인
-        echo "DEBUG: Python version: $(python --version 2>&1)" >&2
-        echo "DEBUG: Python executable: $(command -v python)" >&2
-        echo "DEBUG: Extract script exists:" >&2
-        ls -l "$PROJECT_DIR/$extract_script" >&2
-        echo "DEBUG: PATH=$PATH" >&2
-        # 프레임 추출 커맨드
-        cmd=(python "$PROJECT_DIR/$extract_script" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
+        cmd=(python3 "$PROJECT_DIR/scripts/extract_ascii_frames_fast.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
         echo "CMD_PYTHON: ${cmd[*]}" >&2
-        # Python 프레임 추출 실행 (pipefail 방지 및 exit code 수집)
         set +e
         set +o pipefail
         set -x
@@ -282,8 +253,13 @@ main() {
             exit $ec
         fi
         echo "✅ 프레임 생성 완료"
-    else
-        echo "🔘 캐시된 프레임 사용 (생성 스킵)" >&2
+        # 프레임 재확인
+        frames=("$frames_dir"/*.txt)
+        frame_count=${#frames[@]}
+    fi
+    if [[ "$frame_count" -eq 0 ]]; then
+        echo "❌ 프레임이 존재하지 않아 재생을 중단합니다." >&2
+        exit 1
     fi
     
     # 8. 플레이어 실행
