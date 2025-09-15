@@ -298,10 +298,16 @@ main() {
         
         # 모드별 추출 스크립트 실행
         if [[ "$mode" == "ASCII" ]]; then
+            # ASCII 모드는 항상 120 FPS 고정
+            fps_val=120
             cmd=(python3 "$PROJECT_DIR/scripts/extract_ascii_frames_fast.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
         elif [[ "$mode" == "RGB" ]]; then
+            # RGB 모드는 60 FPS
+            fps_val=60
             cmd=(python3 "$PROJECT_DIR/scripts/extract_ansi_frames.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
         else  # GRAPHICS
+            # GRAPHICS 모드는 60 FPS
+            fps_val=60
             cmd=(python3 "$PROJECT_DIR/scripts/extract_png_frames.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
         fi
         
@@ -377,10 +383,14 @@ main() {
         find "$frames_dir" -maxdepth 1 -type f -name '*.png' | sort | \
         while IFS= read -r img; do
             if command -v kitty > /dev/null 2>&1; then
-                # Kitty: stream-till-eof 모드로 stdin 직접 스트리밍 (확장자/identify 우회)
-                kitty +kitten icat --clear --silent --transfer-mode=memory --stdin < "$img"
+                # Kitty: 개행 방지를 위해 --clear 제거하고 커서 위치 고정
+                kitty +kitten icat --silent --transfer-mode=memory --stdin < "$img"
+                # 커서 위치를 화면 시작으로 고정 (개행 방지)
+                printf '\033[H'
             elif command -v imgcat > /dev/null 2>&1; then
                 imgcat "$img"
+                # imgcat 후에도 커서 위치 고정
+                printf '\033[H'
             else
                 echo "❌ GRAPHICS 모드를 사용하려면 kitty 또는 iTerm2의 imgcat이 필요합니다." >&2
                 exit 1

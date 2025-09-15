@@ -1,4 +1,6 @@
-assets/
+**bad_apple.mp4
+**bad_apple.wav
+
 venv/
 __pycache__/
 *.pyc

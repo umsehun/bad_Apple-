@@ -29,6 +29,19 @@ cd badApple
 ./play.sh
 ```
 
+### Windows Users 🪟
+Windows에서는 bash 환경이 필요합니다:
+```batch
+# 방법 1: 배치 파일 사용 (권장)
+play.bat
+
+# 방법 2: PowerShell 스크립트 사용
+powershell -ExecutionPolicy Bypass -File play.ps1
+
+# 방법 3: Git Bash에서 직접 실행
+./play.sh
+```
+
 ### Using Make
 ```bash
 # Build and launch (handles setup automatically)
@@ -82,6 +95,33 @@ brew install ffmpeg
 
 # Install Python packages
 pip3 install opencv-python numpy
+```
+
+### Install Dependencies (Windows) 🪟
+```batch
+# 방법 1: Git for Windows (추천)
+# 1. https://gitforwindows.org/ 에서 Git for Windows 다운로드 및 설치
+# 2. Git Bash 실행
+# 3. Python 및 pip 설치 확인
+python --version
+pip --version
+
+# 4. 필수 패키지 설치
+pip install opencv-python numpy
+
+# 5. FFmpeg 설치 (Chocolatey 사용)
+# PowerShell에서 (관리자 권한):
+# choco install ffmpeg
+
+# 방법 2: WSL (Windows Subsystem for Linux)
+# 1. PowerShell에서 (관리자 권한):
+# wsl --install
+# wsl --set-default Ubuntu
+
+# 2. WSL 터미널에서 Ubuntu 설정 후:
+# sudo apt update
+# sudo apt install python3 python3-pip ffmpeg
+# pip3 install opencv-python numpy
 ```
 
 ## 🎮 Usage
@@ -284,7 +324,58 @@ Run with debug build to see detailed performance information.
 3. Use `make format` to format code (requires clang-format)
 4. Run `make static-analysis` for code quality checks
 
-## 📄 License
+## � Troubleshooting
+
+### Windows Issues 🪟
+**문제: 'bash'이(가) 내부 또는 외부 명령으로 인식되지 않습니다**
+```
+해결: Git for Windows 또는 WSL을 설치하세요
+```
+
+**문제: Python 모듈을 찾을 수 없음**
+```batch
+# pip로 재설치
+pip install --upgrade opencv-python numpy
+```
+
+**문제: FFmpeg를 찾을 수 없음**
+```batch
+# Chocolatey로 설치 (PowerShell 관리자 권한)
+choco install ffmpeg
+
+# 또는 scoop 사용
+scoop install ffmpeg
+```
+
+**문제: 권한 오류**
+```batch
+# Git Bash를 관리자 권한으로 실행
+# 또는 파일 권한 수정
+chmod +x play.sh
+```
+
+### Common Issues
+**문제: 프레임 생성 실패**
+```bash
+# 캐시 삭제 후 재시도
+rm -rf ~/.badapple_cache
+./play.sh
+```
+
+**문제: 오디오 동기화 문제**
+```bash
+# 오디오 파일 재추출
+rm assets/bad_apple.wav
+./play.sh
+```
+
+**문제: 터미널 크기 감지 실패**
+```bash
+# 수동 크기 지정
+./play.sh -w 120 -h 40
+```
+
+## �📄 License
 
 This project is for educational and entertainment purposes. Original Bad Apple video by Team Shanghai Alice.
 
