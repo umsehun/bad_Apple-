@@ -5,8 +5,8 @@
 MAKEFLAGS += -j$(shell sysctl -n hw.ncpu)
 
 # 컴파일러 및 플래그
-# 빌드 캐시를 위해 ccache를 사용합니다
-CC = ccache gcc
+# 빌드 캐시를 위해 ccache를 사용하되, 없으면 gcc만 사용
+CC := $(shell (command -v ccache >/dev/null 2>&1 && echo 'ccache gcc') || echo 'gcc')
 CFLAGS = -std=c99 -Wall -Wextra -pedantic
 CFLAGS += -O3 -march=native -mtune=native
 CFLAGS += -ffast-math -funroll-loops -finline-functions
@@ -19,7 +19,7 @@ DEBUG_CFLAGS = -std=c99 -Wall -Wextra -pedantic -g -O0 -DDEBUG
 LDFLAGS = -pthread -lm
 # zld(ld64.zld)가 설치된 경우 빠른 링킹 사용
 ifneq (, $(shell which ld64.zld))
-    LDFLAGS += -Wl,-fuse-ld=ld64.zld
+	LDFLAGS += -Wl,-fuse-ld=ld64.zld
 endif
 
 # 디렉토리 구조
@@ -30,11 +30,11 @@ BINDIR = $(BUILDDIR)/bin
 
 # 소스 파일들
 SOURCES = $(SRCDIR)/main.c \
-          $(SRCDIR)/core/frame_manager.c \
-          $(SRCDIR)/core/audio_manager.c \
-          $(SRCDIR)/core/display_manager.c \
-          $(SRCDIR)/utils/error_handler.c \
-          $(SRCDIR)/utils/file_utils.c
+		  $(SRCDIR)/core/frame_manager.c \
+		  $(SRCDIR)/core/audio_manager.c \
+		  $(SRCDIR)/core/display_manager.c \
+		  $(SRCDIR)/utils/error_handler.c \
+		  $(SRCDIR)/utils/file_utils.c
 
 # 오브젝트 파일들
 OBJECTS = $(SOURCES:$(SRCDIR)/%.c=$(OBJDIR)/%.o)

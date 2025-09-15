@@ -19,19 +19,19 @@ import itertools
 import cv2
 import numpy as np
 
-# 70단계 문자 램프 (따옴표/역슬래시 이스케이프)
-ASCII_GRADIENT = " .`^\",:;Il!i><~+_-?][}{1)(|\\/*tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$"
-# 기본 8단계(속도)와 70단계(고품질) LUT 준비
-LUT_8 = np.array(list(' .-*%#@'), dtype='<U1')
-LUT_70 = np.array(list(ASCII_GRADIENT), dtype='<U1')
+# 간단한 10단계 ASCII 문자 램프 (명확한 대비)
+ASCII_GRADIENT = " .:-=+*#%@"
+# 기본 8단계(속도)와 10단계(고품질) LUT 준비
+LUT_8 = np.array(list(' .:-=*#@'), dtype='<U1')
+LUT_10 = np.array(list(ASCII_GRADIENT), dtype='<U1')
 
 # LUT → 256-level 문자 매핑 테이블 사전 계산 (uint8 인덱스 → 문자)
 CHAR_MAP_8 = np.array([LUT_8[(i * (len(LUT_8)-1)) // 255] for i in range(256)], dtype='<U1')
-CHAR_MAP_70 = np.array([LUT_70[(i * (len(LUT_70)-1)) // 255] for i in range(256)], dtype='<U1')
+CHAR_MAP_10 = np.array([LUT_10[(i * (len(LUT_10)-1)) // 255] for i in range(256)], dtype='<U1')
 
 # 전역 설정값 (인자에 의해 갱신)
 USE_HIGH = True
-USE_DITHER = 'none'  # 'none' | 'fs' | 'ordered'
+USE_DITHER = 'none'  # 기본적으로 디더링 끄고 테스트
 
 # 8×8 Bayer 행렬 (ordered dither)
 _BAYER_8 = (
@@ -85,12 +85,22 @@ def _fs_dither(gray: np.ndarray, lut_chars: np.ndarray) -> List[str]:
 def _ordered_dither(gray: np.ndarray, lut_chars: np.ndarray) -> List[str]:
     """8×8 Bayer ordered dither"""
     h, w = gray.shape
-    tiled_threshold = np.tile(_BAYER_8, (h // 8 + 1, w // 8 + 1))[:h, :w]
     levels = len(lut_chars) - 1
-    # threshold 정규화: 0~63 → 0~255 로 확장 후 추가
-    dithered = gray + (tiled_threshold * 4) - 128  # shift 약간 대비 향상
+
+    # Bayer 행렬을 프레임 크기에 맞게 타일링
+    bayer_h = (h + 7) // 8
+    bayer_w = (w + 7) // 8
+    tiled_threshold = np.tile(_BAYER_8, (bayer_h, bayer_w))[:h, :w]
+
+    # threshold 정규화 및 적용
+    dithered = gray.astype(np.int16) + (tiled_threshold * 4) - 128
     dithered = np.clip(dithered, 0, 255).astype(np.uint8)
-    ascii_img = lut_chars[(dithered * levels) // 255]
+
+    # LUT 적용
+    indices = (dithered * levels) // 255
+    indices = np.clip(indices, 0, levels)
+    ascii_img = lut_chars[indices]
+
     return ["".join(row) for row in ascii_img]
 
 
@@ -98,19 +108,23 @@ def bgr_frame_to_ascii(frame: np.ndarray) -> str:
     """BGR 프레임 → ASCII 문자열 (디더링·고품질 지원)"""
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
-    # 대비 향상
+    # 대비 향상 (CLAHE)
     clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     enhanced = clahe.apply(gray)
 
-    # 문자 LUT 준비
-    lut_chars = CHAR_MAP_70 if USE_HIGH else CHAR_MAP_8
+    # 블러링으로 노이즈 감소 (선택적)
+    enhanced = cv2.GaussianBlur(enhanced, (3, 3), 0)
 
-    # 디더링 분기
+    # 고품질 LUT 사용
+    lut_chars = CHAR_MAP_10  # 간소화된 고품질 문자 셋 사용
+
+    # 디더링 적용 (ordered dither로 품질 향상)
     if USE_DITHER == 'fs':
         ascii_rows = _fs_dither(enhanced, lut_chars)
     elif USE_DITHER == 'ordered':
         ascii_rows = _ordered_dither(enhanced, lut_chars)
     else:
+        # 기본 변환도 개선
         ascii_img = lut_chars[enhanced]
         ascii_rows = ["".join(row) for row in ascii_img]
 
@@ -118,8 +132,38 @@ def bgr_frame_to_ascii(frame: np.ndarray) -> str:
     return "\n".join(ascii_rows) + "\n"
 
 
+def get_video_info(path: str):
+    """비디오 파일의 FPS와 총 프레임 수를 가져옴"""
+    cmd = [
+        'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+        '-show_entries', 'stream=r_frame_rate,duration',
+        '-of', 'csv=p=0', path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            parts = result.stdout.strip().split(',')
+            if len(parts) >= 2:
+                # r_frame_rate는 "30/1" 형식
+                rate_parts = parts[0].split('/')
+                if len(rate_parts) == 2:
+                    fps = float(rate_parts[0]) / float(rate_parts[1])
+                    duration = float(parts[1]) if parts[1] != 'N/A' else 0
+                    return fps, duration
+    except (subprocess.TimeoutExpired, ValueError, IndexError):
+        pass
+    return 30.0, 0.0  # 기본값
+
+
 def stream_frames_ffmpeg(path: str, width: int, height: int, fps: int):
     """FFmpeg subprocess 로부터 BGR raw frame 을 yield"""
+    # 비디오 정보 확인
+    orig_fps, duration = get_video_info(path)
+    print(f'🎥 원본 FPS: {orig_fps:.1f}, 길이: {duration:.1f}s')
+
+    # 요청된 FPS 그대로 사용 (강제 120 FPS)
+    print(f'🎯 타겟 FPS: {fps} (강제 적용)')
+
     cmd = [
         'ffmpeg', '-loglevel', 'error', '-i', path,
         '-vf', f'fps={fps},scale={width}:{height}',
@@ -141,27 +185,58 @@ def stream_frames_ffmpeg(path: str, width: int, height: int, fps: int):
 
 
 def extract_frames(input_path: str, output_dir: str, width: int, height: int, fps: int):
-    os.makedirs(output_dir, exist_ok=True)
+    # 출력 디렉토리 생성 및 권한 확인
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        # 디렉토리 쓰기 권한 확인
+        test_file = os.path.join(output_dir, '.test_write')
+        with open(test_file, 'w') as f:
+            f.write('test')
+        os.remove(test_file)
+    except (OSError, PermissionError) as e:
+        print(f'❌ 출력 디렉토리 생성/권한 오류: {e}')
+        sys.exit(1)
+
     start = time.time()
     processed = 0
+    last_report_time = start
 
     print(f'🎬 {input_path}')
     print(f'📐 {width}x{height} @ {fps}fps')
 
-    for frame in stream_frames_ffmpeg(input_path, width, height, fps):
-        ascii_txt = bgr_frame_to_ascii(frame)
-        out_path = os.path.join(output_dir, f'frame_{processed:05d}.txt')
-        with open(out_path, 'w', encoding='utf-8') as fp:
-            fp.write(ascii_txt)
+    try:
+        for frame in stream_frames_ffmpeg(input_path, width, height, fps):
+            ascii_txt = bgr_frame_to_ascii(frame)
+            out_path = os.path.join(output_dir, f'frame_{processed:05d}.txt')
 
-        processed += 1
-        if processed % 100 == 0:
-            elapsed = time.time() - start
-            speed = processed / elapsed if elapsed else 0
-            print(f'\r📈 {processed} frames | {speed:.1f} fps', end='', flush=True)
+            try:
+                with open(out_path, 'w', encoding='utf-8') as fp:
+                    fp.write(ascii_txt)
+            except (OSError, PermissionError) as e:
+                print(f'\n❌ 파일 저장 오류 ({out_path}): {e}')
+                continue
+
+            processed += 1
+
+            # 1초마다 진행 상황 보고 (속도 계산 개선)
+            current_time = time.time()
+            if current_time - last_report_time >= 1.0:
+                elapsed = current_time - start
+                speed = processed / elapsed if elapsed > 0 else 0
+                print(f'\r📈 {processed} frames | {speed:.1f} fps', end='', flush=True)
+                last_report_time = current_time
+
+    except KeyboardInterrupt:
+        print(f'\n⚠️ 사용자 중단: {processed} 프레임 처리됨')
+    except Exception as e:
+        print(f'\n❌ 처리 중 오류: {e}')
 
     duration = time.time() - start
-    print(f'\n✅ 완료! 총 {processed} 프레임, {duration:.1f}s, 평균 {processed/duration:.1f} fps')
+    if duration > 0:
+        avg_fps = processed / duration
+        print(f'\n✅ 완료! 총 {processed} 프레임, {duration:.1f}s, 평균 {avg_fps:.1f} fps')
+    else:
+        print(f'\n✅ 완료! 총 {processed} 프레임')
 
 
 def main():

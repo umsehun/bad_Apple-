@@ -9,6 +9,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 set -euo pipefail
 # ERR 트랩 상속
 set -o errtrace
+
+# 색상 정의 (플랫폼 추천 표시용)
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly PURPLE='\033[0;35m'
+readonly CYAN='\033[0;36m'
+readonly NC='\033[0m' # No Color
 # 디버그 로깅을 위해 대체 화면 버퍼 전환과 EXIT 트랩을 일시 비활성화합니다
 # printf '\e[?1049h'
 # tput civis
@@ -32,6 +41,16 @@ printf '\e[H'
 PROJECT_DIR="$SCRIPT_DIR"
 # 빌드된 실행 파일 경로
 PLAYER_BIN="$PROJECT_DIR/build/bin/badapple"
+
+# 🔧 플랫폼 감지 및 최적화 설정
+echo "🔍 플랫폼 환경 감지 중..." >&2
+source "$PROJECT_DIR/platform.sh"
+detect_and_export_platform
+if [[ -z "${BADAPPLE_OS_NAME:-}" ]]; then
+    echo "❌ 플랫폼 감지 실패: 환경변수 미설정. 반드시 source로 실행되어야 합니다." >&2
+    exit 1
+fi
+echo "✅ 플랫폼 감지: $BADAPPLE_OS_NAME / $BADAPPLE_TERMINAL / $BADAPPLE_RECOMMENDED_MODE"
 
 # sanitize PATH to remove Yarn v2 global errors and entries with spaces
 IFS=":" read -ra _p <<< "$PATH"
@@ -97,18 +116,29 @@ choose_file() {
     fi
 }
 
-# 옵션 선택 유틸 (ASCII/RGB)
+# 옵션 선택 유틸 (ASCII/RGB/GRAPHICS) - 플랫폼 추천 반영
 choose_mode() {
+    local recommended="${BADAPPLE_RECOMMENDED_MODE:-ASCII}"
+    
     echo -e "\n🔹 재생 모드를 선택하세요:" >&2
-    echo "  1) ASCII" >&2
-    echo "  2) RGB" >&2
-    echo "  3) GRAPHICS" >&2
-    read -rp "번호 선택(Enter=ASCII, 2=RGB, 3=GRAPHICS): " sel >&2
+    echo "  1) ASCII (기본)" >&2
+    echo "  2) RGB (24비트 트루컬러)" >&2
+    echo "  3) GRAPHICS (이미지 직접 출력)" >&2
+    
+    # 플랫폼 추천 표시
+    case "$recommended" in
+        "GRAPHICS") echo -e "  ${GREEN}💡 추천: GRAPHICS 모드 (Kitty 그래픽 지원 감지)${NC}" >&2 ;;
+        "RGB") echo -e "  ${GREEN}💡 추천: RGB 모드 (24비트 트루컬러 지원 감지)${NC}" >&2 ;;
+        "ASCII") echo -e "  ${GREEN}💡 추천: ASCII 모드 (안정성 우선)${NC}" >&2 ;;
+    esac
+    
+    read -rp "번호 선택(Enter=추천모드, 1=ASCII, 2=RGB, 3=GRAPHICS): " sel >&2
     case "$sel" in
-        3) echo "GRAPHICS" ;;  # 이미지 모드
-        2) echo "RGB" ;;  # RGB 모드
-        ""|1) echo "ASCII" ;;  # 기본값 ASCII
-        *) echo "ASCII" ;;  # 기타 입력 시 기본값
+        3) echo "GRAPHICS" ;;
+        2) echo "RGB" ;;
+        1) echo "ASCII" ;;
+        "") echo "$recommended" ;;  # 추천 모드 사용
+        *) echo "$recommended" ;;   # 기타 입력시 추천 모드
     esac
 }
 
@@ -119,12 +149,20 @@ main() {
     echo "=================================="
     echo
     
-    # 1. 빌드 확인
+    # 1. 빌드 확인 - 플랫폼별 병렬 빌드 최적화
     if [ ! -f "$PLAYER_BIN" ]; then
-        echo "Building player..."
+        echo "Building player..." >&2
         cd "$PROJECT_DIR"
-        # 병렬 빌드로 속도 개선
-        make -j$(sysctl -n hw.ncpu) > /dev/null 2>&1 || { echo "❌ Build failed"; exit 1; }
+        
+        # 플랫폼 감지된 병렬 빌드 설정 사용
+        local build_flags="${BADAPPLE_BUILD_PARALLEL:--j$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 1)}"
+        echo "🔨 Building with flags: make $build_flags" >&2
+        
+        make $build_flags > /dev/null 2>&1 || { 
+            echo "❌ Build failed" >&2
+            exit 1
+        }
+        echo "✅ Build completed successfully" >&2
     fi
     
     # 2. 플레이 모드 선택 (ASCII / RGB)
@@ -176,35 +214,59 @@ main() {
         audio_path="$PROJECT_DIR/assets/audio/$audio_file"
     fi
 
-    # 5. 터미널 크기 감지 및 기본 ASCII 프레임 크기 계산
-    echo "DEBUG: STEP 5 - Detecting terminal size and calculating ASCII dimensions" >&2
-    ts=$(stty size 2>/dev/null || echo "20 80")
-    rows=$(echo $ts | cut -d ' ' -f1)
-    cols=$(echo $ts | cut -d ' ' -f2)
-    ascii_width=$((cols - 3))
-    ascii_height=$((rows - 3))
-    [ "$ascii_width" -lt 40 ] && ascii_width=40
-    [ "$ascii_height" -lt 20 ] && ascii_height=20
-    [ "$ascii_width" -gt 300 ] && ascii_width=300
-    [ "$ascii_height" -gt 100 ] && ascii_height=100
+    # 5. 터미널 크기 감지 및 ASCII 프레임 크기 계산 - 플랫폼 최적화 반영
+    echo "DEBUG: STEP 5 - Platform-optimized terminal size detection" >&2
+    
+    # 플랫폼 감지된 정보 우선 사용
+    if [[ -n "${BADAPPLE_TERMINAL_WIDTH:-}" ]] && [[ -n "${BADAPPLE_TERMINAL_HEIGHT:-}" ]]; then
+        cols="$BADAPPLE_TERMINAL_WIDTH"
+        rows="$BADAPPLE_TERMINAL_HEIGHT"
+        echo "🔧 플랫폼 감지: ${cols}x${rows} (${BADAPPLE_TERMINAL})" >&2
+    else
+        # 폴백: stty 사용
+        ts=$(stty size 2>/dev/null || echo "24 80")
+        rows=$(echo $ts | cut -d ' ' -f1)
+        cols=$(echo $ts | cut -d ' ' -f2)
+        echo "📏 폴백 감지: ${cols}x${rows}" >&2
+    fi
+    
+    # 플랫폼 추천 크기 우선 사용, 없으면 계산
+    if [[ -n "${BADAPPLE_RECOMMENDED_WIDTH:-}" ]] && [[ -n "${BADAPPLE_RECOMMENDED_HEIGHT:-}" ]]; then
+        ascii_width="$BADAPPLE_RECOMMENDED_WIDTH"
+        ascii_height="$BADAPPLE_RECOMMENDED_HEIGHT"
+        echo "💡 추천 크기 사용: ${ascii_width}x${ascii_height}" >&2
+    else
+        # 폴백 계산
+        ascii_width=$((cols - 3))
+        ascii_height=$((rows - 3))
+        [ "$ascii_width" -lt 40 ] && ascii_width=40
+        [ "$ascii_height" -lt 20 ] && ascii_height=20
+        [ "$ascii_width" -gt 300 ] && ascii_width=300
+        [ "$ascii_height" -gt 100 ] && ascii_height=100
+        echo "🔢 계산된 크기: ${ascii_width}x${ascii_height}" >&2
+    fi
 
     # Note: 터미널 크기 기반 해상도 조정은 ANSI 모드에서 프레임 생성 직전에 수행합니다
 
-    # 6. 프레임 디렉터리 / 추출 스크립트 설정
+    # 6. 프레임 디렉터리 / 추출 스크립트 설정 - 플랫폼별 FPS 최적화
+    local recommended_fps="${BADAPPLE_RECOMMENDED_FPS:-120}"
+    
     if [[ "$mode" == "ASCII" ]]; then
         frames_dir="$PROJECT_DIR/assets/ascii_frames"
         extract_script="scripts/extract_ascii_frames_fast.py"
-        target_fps=120
+        target_fps="$recommended_fps"
     elif [[ "$mode" == "RGB" ]]; then
         frames_dir="$PROJECT_DIR/assets/ansi_frames"
         extract_script="scripts/extract_ansi_frames.py"
-        target_fps=120
+        target_fps="$recommended_fps"
     else
         # GRAPHICS 모드: PNG 프레임 사용
         frames_dir="$PROJECT_DIR/assets/png_frames"
         extract_script="scripts/extract_png_frames.py"
-        target_fps=120
+        target_fps="$recommended_fps"
     fi
+    
+    echo "🎯 선택된 모드: $mode, FPS: $target_fps (추천: $recommended_fps)" >&2
     # 기존 프레임 디렉터리 완전 초기화 후 카운트(삭제 시간 대기)
     if [[ -d "$frames_dir" ]]; then
         rm -rf "$frames_dir"
@@ -218,20 +280,17 @@ main() {
     frame_count=${#frames[@]}
     echo "DEBUG: STEP 7 - frames_dir=$frames_dir, existing frames=$frame_count" >&2
 
-    # 프레임이 없으면 자동 생성
+    # 프레임이 없으면 자동 생성 - 플랫폼 최적화 설정 사용
     if [[ "$frame_count" -eq 0 && "$mode" == "ASCII" ]]; then
-        echo "🔄 프레임이 없으므로 자동으로 생성합니다 ($mode) …"
-        ts=$(stty size 2>/dev/null || echo "20 80")
-        rows=$(echo $ts | cut -d ' ' -f1)
-        cols=$(echo $ts | cut -d ' ' -f2)
-        frame_w=$((cols - 3))
-        frame_h=$((rows - 3))
-        [ "$frame_w" -lt 40 ] && frame_w=40
-        [ "$frame_h" -lt 20 ] && frame_h=20
-        [ "$frame_w" -gt 300 ] && frame_w=300
-        [ "$frame_h" -gt 100 ] && frame_h=100
-        fps_val=120
-        echo "📏 터미널 ${cols}x${rows}, Frames: ${frame_w}x${frame_h}, FPS: ${fps_val}" >&2
+        echo "🔄 프레임이 없으므로 자동으로 생성합니다 ($mode) …" >&2
+        
+        # 플랫폼 추천 크기 사용 (이미 위에서 설정됨)
+        frame_w="$ascii_width"
+        frame_h="$ascii_height"
+        fps_val="$target_fps"
+        
+        echo "📏 터미널 ${cols}x${rows}, 프레임: ${frame_w}x${frame_h}, FPS: ${fps_val}" >&2
+        echo "🔧 플랫폼: ${BADAPPLE_OS_NAME:-Unknown} ${BADAPPLE_TERMINAL:-Unknown}" >&2
         cmd=(python3 "$PROJECT_DIR/scripts/extract_ascii_frames_fast.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
         echo "CMD_PYTHON: ${cmd[*]}" >&2
         set +e
