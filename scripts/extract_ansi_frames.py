@@ -191,7 +191,7 @@ def main():
     parser.add_argument("-o", "--output", default="ansi_frames", help="출력 디렉터리")
     parser.add_argument("-w", "--width", type=int, default=265, help="가로 문자 수")
     parser.add_argument("-ht", "--height", type=int, default=65, help="세로 문자 수")
-    parser.add_argument("-f", "--fps", type=int, default=120, help="목표 FPS (반복 저장)")
+    parser.add_argument("-f", "--fps", type=int, default=60, help="목표 FPS (반복 저장)")
     parser.add_argument("--char", default='█', help="컬러 픽셀에 사용할 문자 (기본: 풀블럭)")
     parser.add_argument("--workers", type=int, default=None, help="쓰레드 수 (기본 CPU 수)")
 

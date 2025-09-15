@@ -245,7 +245,7 @@ def main():
     p.add_argument('-o', '--output', default='ascii_frames', help='Output directory')
     p.add_argument('-w', '--width', type=int, default=140, help='Frame width')
     p.add_argument('-ht', '--height', type=int, default=50, help='Frame height')
-    p.add_argument('-f', '--fps', type=int, default=120, help='Target FPS')
+    p.add_argument('-f', '--fps', type=int, default=60, help='Target FPS')
     p.add_argument('--quality', choices=['fast', 'high'], default='high', help='ASCII LUT quality')
     p.add_argument('--dither', choices=['none', 'fs', 'ordered'], default='none', help='Dithering algorithm')
     args = p.parse_args()

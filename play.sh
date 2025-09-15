@@ -249,7 +249,7 @@ main() {
     # Note: 터미널 크기 기반 해상도 조정은 ANSI 모드에서 프레임 생성 직전에 수행합니다
 
     # 6. 프레임 디렉터리 / 추출 스크립트 설정 - 플랫폼별 FPS 최적화
-    local recommended_fps="${BADAPPLE_RECOMMENDED_FPS:-120}"
+    local recommended_fps="60"  # 60 FPS로 통일
     
     if [[ "$mode" == "ASCII" ]]; then
         frames_dir="$PROJECT_DIR/assets/ascii_frames"
@@ -274,14 +274,18 @@ main() {
     fi
     mkdir -p "$frames_dir"
     
-    # 7. 프레임 존재 확인 & 자동 생성
+    # 7. 프레임 존재 확인 & 자동 생성 (모든 모드 지원)
     shopt -s nullglob
-    frames=("$frames_dir"/*.txt)
+    if [[ "$mode" == "GRAPHICS" ]]; then
+        frames=("$frames_dir"/*.png)
+    else
+        frames=("$frames_dir"/*.txt)
+    fi
     frame_count=${#frames[@]}
     echo "DEBUG: STEP 7 - frames_dir=$frames_dir, existing frames=$frame_count" >&2
 
-    # 프레임이 없으면 자동 생성 - 플랫폼 최적화 설정 사용
-    if [[ "$frame_count" -eq 0 && "$mode" == "ASCII" ]]; then
+    # 프레임이 없으면 자동 생성 - 모든 모드 지원
+    if [[ "$frame_count" -eq 0 ]]; then
         echo "🔄 프레임이 없으므로 자동으로 생성합니다 ($mode) …" >&2
         
         # 플랫폼 추천 크기 사용 (이미 위에서 설정됨)
@@ -291,7 +295,16 @@ main() {
         
         echo "📏 터미널 ${cols}x${rows}, 프레임: ${frame_w}x${frame_h}, FPS: ${fps_val}" >&2
         echo "🔧 플랫폼: ${BADAPPLE_OS_NAME:-Unknown} ${BADAPPLE_TERMINAL:-Unknown}" >&2
-        cmd=(python3 "$PROJECT_DIR/scripts/extract_ascii_frames_fast.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
+        
+        # 모드별 추출 스크립트 실행
+        if [[ "$mode" == "ASCII" ]]; then
+            cmd=(python3 "$PROJECT_DIR/scripts/extract_ascii_frames_fast.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
+        elif [[ "$mode" == "RGB" ]]; then
+            cmd=(python3 "$PROJECT_DIR/scripts/extract_ansi_frames.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
+        else  # GRAPHICS
+            cmd=(python3 "$PROJECT_DIR/scripts/extract_png_frames.py" --input "$video_path" --output "$frames_dir" --width "$frame_w" --height "$frame_h" --fps "$fps_val")
+        fi
+        
         echo "CMD_PYTHON: ${cmd[*]}" >&2
         set +e
         set +o pipefail
@@ -313,7 +326,11 @@ main() {
         fi
         echo "✅ 프레임 생성 완료"
         # 프레임 재확인
-        frames=("$frames_dir"/*.txt)
+        if [[ "$mode" == "GRAPHICS" ]]; then
+            frames=("$frames_dir"/*.png)
+        else
+            frames=("$frames_dir"/*.txt)
+        fi
         frame_count=${#frames[@]}
     fi
     if [[ "$frame_count" -eq 0 ]]; then

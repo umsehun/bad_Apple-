@@ -68,6 +68,6 @@ if __name__ == '__main__':
     parser.add_argument("-o", "--output", default="png_frames", help="출력 디렉터리")
     parser.add_argument("-w", "--width", type=int, default=140, help="가로 픽셀 수")
     parser.add_argument("-ht", "--height", type=int, default=50, help="세로 픽셀 수")
-    parser.add_argument("-f", "--fps", type=int, default=120, help="목표 FPS")
+    parser.add_argument("-f", "--fps", type=int, default=60, help="목표 FPS")
     args = parser.parse_args()
     extract_png_frames(args.input, args.output, args.width, args.height, args.fps)
