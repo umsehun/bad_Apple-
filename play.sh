@@ -44,8 +44,19 @@ PLAYER_BIN="$PROJECT_DIR/build/bin/badapple"
 
 # 🔧 플랫폼 감지 및 최적화 설정
 echo "🔍 플랫폼 환경 감지 중..." >&2
+
+# 명령행 인수에서 --no-compile 옵션 추출
+PLATFORM_ARGS=()
+for arg in "$@"; do
+    case $arg in
+        --no-compile)
+            PLATFORM_ARGS+=("--no-compile")
+            ;;
+    esac
+done
+
 source "$PROJECT_DIR/platform.sh"
-detect_and_export_platform
+detect_and_export_platform "${PLATFORM_ARGS[@]}"
 if [[ -z "${BADAPPLE_OS_NAME:-}" ]]; then
     echo "❌ 플랫폼 감지 실패: 환경변수 미설정. 반드시 source로 실행되어야 합니다." >&2
     exit 1

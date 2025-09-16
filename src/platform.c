@@ -13,10 +13,13 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <time.h>
+
+#ifndef WINDOWS_BUILD
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
 #include <termios.h>
-#include <time.h>
+#endif
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
@@ -24,6 +27,11 @@
 
 #ifdef __linux__
 #include <sys/sysinfo.h>
+#endif
+
+#ifdef WINDOWS_BUILD
+#include <windows.h>
+#include <winbase.h>
 #endif
 
 // AsciiStream 플랫폼 정보 구조체
@@ -50,6 +58,12 @@ typedef struct
  */
 static void detect_os_info(AsciiStreamPlatformInfo *info)
 {
+#ifdef WINDOWS_BUILD
+    // Windows 크로스 컴파일용 기본값 설정
+    strcpy(info->os_name, "Windows");
+    strcpy(info->os_version, "10.0");
+    strcpy(info->arch, "x86_64");
+#else
     struct utsname uname_info;
     if (uname(&uname_info) == 0)
     {
@@ -76,6 +90,7 @@ static void detect_os_info(AsciiStreamPlatformInfo *info)
             strcpy(info->os_name, "macOS");
         }
     }
+#endif
 #endif
 }
 
@@ -263,6 +278,11 @@ static void detect_graphics_support(AsciiStreamPlatformInfo *info)
  */
 static void detect_terminal_size(AsciiStreamPlatformInfo *info)
 {
+#ifdef WINDOWS_BUILD
+    // Windows에서는 기본 터미널 크기 사용
+    info->terminal_width = 80;
+    info->terminal_height = 24;
+#else
     struct winsize w;
     int fd = STDOUT_FILENO;
 
@@ -283,6 +303,7 @@ static void detect_terminal_size(AsciiStreamPlatformInfo *info)
         info->terminal_width = 80;
         info->terminal_height = 24;
     }
+#endif
 }
 
 /**
@@ -290,6 +311,11 @@ static void detect_terminal_size(AsciiStreamPlatformInfo *info)
  */
 static void detect_system_resources(AsciiStreamPlatformInfo *info)
 {
+#ifdef WINDOWS_BUILD
+    // Windows에서는 기본값 설정
+    info->cpu_cores = 4;    // 기본 4코어 가정
+    info->memory_mb = 8192; // 기본 8GB 가정
+#else
 // CPU 코어 수 감지
 #ifdef __APPLE__
     size_t size = sizeof(info->cpu_cores);
@@ -328,6 +354,7 @@ static void detect_system_resources(AsciiStreamPlatformInfo *info)
 
     if (info->cpu_cores <= 0)
         info->cpu_cores = 1;
+#endif
 }
 
 /**
@@ -335,12 +362,27 @@ static void detect_system_resources(AsciiStreamPlatformInfo *info)
  */
 static void setup_cache_path(AsciiStreamPlatformInfo *info)
 {
+#ifdef WINDOWS_BUILD
+    const char *home = getenv("APPDATA");
+    if (!home)
+    {
+        home = getenv("USERPROFILE");
+    }
+    if (!home)
+    {
+        home = "C:\\Temp";
+    }
+
+    snprintf(info->cache_path, sizeof(info->cache_path),
+             "%s\\badapple_platform_cache", home);
+#else
     const char *home = getenv("HOME");
     if (!home)
         home = "/tmp";
 
     snprintf(info->cache_path, sizeof(info->cache_path),
              "%s/.badapple_platform_cache", home);
+#endif
 }
 
 /**

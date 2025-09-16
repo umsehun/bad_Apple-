@@ -52,6 +52,9 @@ if ($Clean) { $args += "--clean" }
 if ($Fresh) { $args += "--fresh" }
 if ($Help) { $args += "--help" }
 
+# Add --no-compile for Windows compatibility
+$args += "--no-compile"
+
 # Run the bash script
 try {
     & bash $bashScript @args
